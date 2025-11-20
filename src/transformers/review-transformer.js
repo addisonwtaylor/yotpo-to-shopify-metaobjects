@@ -8,11 +8,11 @@ export function transformYotpoReview(yotpoReview, productId = null) {
   const fields = [
     {
       key: 'yotpo_id',
-      value: yotpoReview.id.toString(),
+      value: (yotpoReview.id || '').toString(),
     },
     {
       key: 'rating',
-      value: yotpoReview.score.toString(),
+      value: (yotpoReview.score || 0).toString(),
     },
     {
       key: 'title',
@@ -53,16 +53,20 @@ export function transformYotpoReview(yotpoReview, productId = null) {
     });
   }
 
-  // Add sentiment score
-  if (typeof yotpoReview.sentiment !== 'undefined') {
-    fields.push({
-      key: 'sentiment_score',
-      value: yotpoReview.sentiment.toString(),
-    });
+  // Add sentiment score (only if valid: between 0 and 1)
+  if (typeof yotpoReview.sentiment !== 'undefined' && yotpoReview.sentiment !== null) {
+    const sentiment = parseFloat(yotpoReview.sentiment);
+    // Only add if it's a valid number between 0 and 1
+    if (!isNaN(sentiment) && sentiment >= 0 && sentiment <= 1) {
+      fields.push({
+        key: 'sentiment_score',
+        value: sentiment.toString(),
+      });
+    }
   }
 
   // Add helpful votes
-  if (typeof yotpoReview.votes_up !== 'undefined') {
+  if (typeof yotpoReview.votes_up !== 'undefined' && yotpoReview.votes_up !== null) {
     fields.push({
       key: 'helpful_votes',
       value: yotpoReview.votes_up.toString(),

@@ -313,7 +313,8 @@ async function syncStatistics(reviews, shopifyClient) {
           );
 
           if (result.userErrors && result.userErrors.length > 0) {
-            console.log(`${progress} ❌ Error updating stats for SKU ${sku}`);
+            console.log(`${progress} ❌ Error updating stats for SKU ${sku}:`);
+            result.userErrors.forEach(err => console.log(`     ${err.message} (${err.code || 'N/A'})`));
             statsErrors++;
           } else {
             console.log(`${progress} ↻ Updated stats: ${sku} (${stats.totalReviews} reviews, ${stats.averageRating}⭐)`);
@@ -323,7 +324,8 @@ async function syncStatistics(reviews, shopifyClient) {
           const result = await statsClient.createStatisticsMetaobject(metaobjectFields);
 
           if (result.userErrors && result.userErrors.length > 0) {
-            console.log(`${progress} ❌ Error creating stats for SKU ${sku}`);
+            console.log(`${progress} ❌ Error creating stats for SKU ${sku}:`);
+            result.userErrors.forEach(err => console.log(`     ${err.message} (${err.code || 'N/A'})`));
             statsErrors++;
           } else {
             console.log(`${progress} ✓ Created stats: ${sku} (${stats.totalReviews} reviews, ${stats.averageRating}⭐)`);
@@ -351,7 +353,8 @@ async function syncStatistics(reviews, shopifyClient) {
         );
 
         if (result.userErrors && result.userErrors.length > 0) {
-          console.log('❌ Error updating global statistics');
+          console.log('❌ Error updating global statistics:');
+          result.userErrors.forEach(err => console.log(`     ${err.message} (${err.code || 'N/A'})`));
           statsErrors++;
         } else {
           console.log(`✓ Updated global stats: ${globalStats.totalReviews} total reviews, ${globalStats.averageRating}⭐ average`);
@@ -361,7 +364,8 @@ async function syncStatistics(reviews, shopifyClient) {
         const result = await statsClient.createStatisticsMetaobject(globalFields);
 
         if (result.userErrors && result.userErrors.length > 0) {
-          console.log('❌ Error creating global statistics');
+          console.log('❌ Error creating global statistics:');
+          result.userErrors.forEach(err => console.log(`     ${err.message} (${err.code || 'N/A'})`));
           statsErrors++;
         } else {
           console.log(`✓ Created global stats: ${globalStats.totalReviews} total reviews, ${globalStats.averageRating}⭐ average`);

@@ -134,7 +134,7 @@ export function transformStatisticsToMetaobject(statistics) {
       value: statistics.oneStarCount.toString(),
     },
     {
-      key: 'last_updated',
+      key: 'synced_at',
       value: statistics.lastUpdated,
     },
   ];
