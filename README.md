@@ -40,7 +40,12 @@ Fill in your credentials:
 ```env
 # Yotpo API Credentials
 YOTPO_APP_KEY=your_yotpo_app_key
+
+# Option 1: Use app secret (generates token via OAuth)
 YOTPO_APP_SECRET=your_yotpo_secret
+
+# Option 2: Use existing user token (faster, recommended)
+# YOTPO_USER_TOKEN=your_yotpo_user_token
 
 # Shopify API Credentials
 SHOPIFY_SHOP_URL=your-store.myshopify.com
@@ -53,7 +58,9 @@ SHOPIFY_API_VERSION=2025-07
 **Yotpo:**
 1. Log into Yotpo
 2. Navigate to Settings → Store Settings
-3. Copy your App Key and Secret Key
+3. Copy your App Key
+4. **Option 1**: Copy your Secret Key (for OAuth authentication)
+5. **Option 2**: Get your User Token from API settings (recommended - faster startup)
 
 **Shopify:**
 1. In your Shopify admin, go to Settings → Apps and sales channels
@@ -211,7 +218,9 @@ The script includes automatic rate limiting to stay within API limits:
 
 **Authentication errors:**
 - Verify your API credentials in `.env`
-- Check that your Yotpo App Key and Secret are correct
+- Check that your Yotpo App Key and Secret/User Token are correct
+- If using `YOTPO_USER_TOKEN`, ensure it's a valid user token (not app secret)
+- The script will automatically use `YOTPO_USER_TOKEN` if provided, falling back to `YOTPO_APP_SECRET`
 
 **Shopify API errors:**
 - Confirm your access token is valid
