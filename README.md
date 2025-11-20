@@ -17,6 +17,7 @@ For Shopify, your custom app needs these API scopes:
 - `write_metaobject_definitions`
 - `read_metaobjects`
 - `write_metaobjects`
+- `read_products`
 
 ## Installation
 
@@ -214,8 +215,9 @@ The script includes automatic rate limiting to stay within API limits:
 
 **Shopify API errors:**
 - Confirm your access token is valid
-- Verify your app has the required scopes
+- Verify your app has the required scopes (including `read_products` for SKU mapping)
 - Check your shop URL format (`yourstore.myshopify.com`)
+- If you get "Access denied for products field", add the `read_products` scope to your app
 
 **Metaobject definition errors:**
 - If definitions already exist, skip setup and run `npm run sync` directly
