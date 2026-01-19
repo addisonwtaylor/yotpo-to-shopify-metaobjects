@@ -3,7 +3,7 @@ import { YotpoClient } from './clients/yotpo-client.js';
 import { ShopifyClient } from './clients/shopify-client.js';
 import { ProductMapper } from './utils/product-mapper.js';
 import { SyncCache } from './utils/sync-cache.js';
-import { transformYotpoReview, shouldSyncReview } from './transformers/review-transformer.js';
+import { transformYotpoReview, shouldSyncReview, shouldIncludeInStatistics } from './transformers/review-transformer.js';
 import { calculateReviewStatistics, calculateGlobalStatistics, transformStatisticsToMetaobject } from './transformers/statistics-calculator.js';
 
 async function syncReviews() {
@@ -56,51 +56,51 @@ async function syncReviews() {
     stats.total = allReviews.length;
     console.log(`✓ Fetched ${stats.total} reviews\n`);
 
-    // Step 2: Filter active reviews only
-    console.log('🔍 Step 2: Filtering active reviews...');
-    const activeReviews = allReviews.filter(shouldSyncReview);
-    stats.filtered = allReviews.length - activeReviews.length;
-    console.log(`✓ ${activeReviews.length} active reviews (filtered ${stats.filtered} inactive)\n`);
+    // Step 2: Filter reviews for metaobject sync (complete reviews only)
+    console.log('🔍 Step 2: Filtering reviews for metaobject sync...');
+    const completeReviews = allReviews.filter(review => shouldSyncReview(review, true));
+    stats.filtered = allReviews.length - completeReviews.length;
+    console.log(`✓ ${completeReviews.length} complete reviews for sync (filtered ${stats.filtered} incomplete/inactive)\n`);
 
-    if (activeReviews.length === 0) {
-      console.log('No active reviews to sync. Exiting.');
+    // Step 2b: Filter all reviews for statistics (includes incomplete reviews with score/sku)
+    console.log('📊 Step 2b: Filtering reviews for statistics...');
+    const reviewsForStatistics = allReviews.filter(shouldIncludeInStatistics);
+    const statsFiltered = allReviews.length - reviewsForStatistics.length;
+    console.log(`✓ ${reviewsForStatistics.length} reviews will be included in statistics (filtered ${statsFiltered})\n`);
+
+    if (completeReviews.length === 0) {
+      console.log('No complete reviews to sync. Exiting.');
       return;
     }
 
     // Step 2.5: Check cache to find changed/new reviews
     console.log('💾 Step 2.5: Checking cache for changes...');
-    const reviewsToSync = activeReviews.filter(review => syncCache.needsSync(review));
-    stats.cached = activeReviews.length - reviewsToSync.length;
+    const reviewsToSync = completeReviews.filter(review => syncCache.needsSync(review));
+    stats.cached = completeReviews.length - reviewsToSync.length;
     console.log(`✓ ${reviewsToSync.length} reviews need syncing (${stats.cached} unchanged)\n`);
 
-    if (reviewsToSync.length === 0) {
-      console.log('✨ All reviews are up to date! No sync needed.');
-      syncCache.updateLastSyncTime();
-      syncCache.saveCache();
-      return;
-    }
+    if (reviewsToSync.length > 0) {
+      // Step 3: Build product SKU cache
+      console.log('📦 Step 3: Building product SKU → Product ID cache...');
+      await productMapper.buildProductCache();
+      const cacheStats = productMapper.getCacheStats();
+      console.log(`✓ Ready to map reviews to products\n`);
 
-    // Step 3: Build product SKU cache
-    console.log('📦 Step 3: Building product SKU → Product ID cache...');
-    await productMapper.buildProductCache();
-    const cacheStats = productMapper.getCacheStats();
-    console.log(`✓ Ready to map reviews to products\n`);
+      // Step 3.5: Build metaobject cache for fast lookups
+      console.log('💾 Step 3.5: Building metaobject cache...');
+      await shopifyClient.buildMetaobjectCache('yotpo_product_review');
+      await shopifyClient.buildMetaobjectCache('yotpo_brand_review');
+      console.log(`✓ Metaobject cache ready\n`);
 
-    // Step 3.5: Build metaobject cache for fast lookups
-    console.log('💾 Step 3.5: Building metaobject cache...');
-    await shopifyClient.buildMetaobjectCache('yotpo_product_review');
-    await shopifyClient.buildMetaobjectCache('yotpo_brand_review');
-    console.log(`✓ Metaobject cache ready\n`);
+      // Step 4: Separate reviews by type
+      console.log('📊 Step 4: Categorizing reviews...');
+      const productReviews = reviewsToSync.filter(r => r.sku !== 'yotpo_site_reviews');
+      const brandReviews = reviewsToSync.filter(r => r.sku === 'yotpo_site_reviews');
+      console.log(`✓ Product reviews: ${productReviews.length}`);
+      console.log(`✓ Brand reviews: ${brandReviews.length}\n`);
 
-    // Step 4: Separate reviews by type
-    console.log('📊 Step 4: Categorizing reviews...');
-    const productReviews = reviewsToSync.filter(r => r.sku !== 'yotpo_site_reviews');
-    const brandReviews = reviewsToSync.filter(r => r.sku === 'yotpo_site_reviews');
-    console.log(`✓ Product reviews: ${productReviews.length}`);
-    console.log(`✓ Brand reviews: ${brandReviews.length}\n`);
-
-    // Step 5: Sync product reviews
-    if (productReviews.length > 0) {
+      // Step 5: Sync product reviews
+      if (productReviews.length > 0) {
       console.log('='.repeat(70));
       console.log('🛍️  Step 5a: Syncing Product Reviews');
       console.log('='.repeat(70) + '\n');
@@ -205,69 +205,75 @@ async function syncReviews() {
           stats.brandReviews.errors++;
         }
       }
+      }
+    } else {
+      console.log('✨ All complete reviews are up to date!');
+      console.log('📊 Proceeding to statistics sync with all reviews...\n');
     }
 
-    // Final Summary
-    console.log('\n' + '='.repeat(70));
-    console.log('📊 SYNC COMPLETE');
-    console.log('='.repeat(70));
-
-    console.log('\n📥 Yotpo Reviews:');
-    console.log(`  Total fetched: ${stats.total}`);
-    console.log(`  Active: ${activeReviews.length}`);
-    console.log(`  Filtered out: ${stats.filtered}`);
-    console.log(`  💾 Cached (unchanged): ${stats.cached}`);
-
-    console.log('\n🛍️  Product Reviews:');
-    console.log(`  ✓ Created: ${stats.productReviews.created}`);
-    console.log(`  ↻ Updated: ${stats.productReviews.updated}`);
-    console.log(`  ⊘ Skipped: ${stats.productReviews.skipped}`);
-    console.log(`  ✗ Errors: ${stats.productReviews.errors}`);
-
-    console.log('\n🏢 Brand Reviews:');
-    console.log(`  ✓ Created: ${stats.brandReviews.created}`);
-    console.log(`  ↻ Updated: ${stats.brandReviews.updated}`);
-    console.log(`  ⊘ Skipped: ${stats.brandReviews.skipped}`);
-    console.log(`  ✗ Errors: ${stats.brandReviews.errors}`);
-
-    console.log('\n🔗 SKU Matching:');
-    console.log(`  ✓ Matched: ${stats.skuMatches.matched}`);
-    console.log(`  ✗ Not found: ${stats.skuMatches.notFound}`);
-
-    const totalCreated = stats.productReviews.created + stats.brandReviews.created;
-    const totalUpdated = stats.productReviews.updated + stats.brandReviews.updated;
-    const totalSkipped = stats.productReviews.skipped + stats.brandReviews.skipped;
-    const totalErrors = stats.productReviews.errors + stats.brandReviews.errors;
-
-    console.log('\n📈 Overall:');
-    console.log(`  ✓ Created: ${totalCreated}`);
-    console.log(`  ↻ Updated: ${totalUpdated}`);
-    console.log(`  ⊘ Skipped: ${totalSkipped}`);
-    console.log(`  ✗ Errors: ${totalErrors}`);
-
-    console.log('\n' + '='.repeat(70));
-
-    if (stats.skuMatches.notFound > 0) {
-      console.log('\n⚠️  Warning: Some reviews were skipped due to SKU mismatches.');
-      console.log('   Check that Yotpo SKUs match Shopify product variant SKUs.');
-    }
-
-    if (totalErrors > 0) {
-      console.log('\n⚠️  Warning: Some reviews failed to sync. Review errors above.');
-    }
-
-    // Save cache
+    // Save cache after metaobject sync
     syncCache.updateLastSyncTime();
     syncCache.saveCache();
 
+    // Final Summary
+    if (reviewsToSync.length > 0) {
+      console.log('\n' + '='.repeat(70));
+      console.log('📊 METAOBJECT SYNC COMPLETE');
+      console.log('='.repeat(70));
+
+      console.log('\n🛍️  Product Reviews:');
+      console.log(`  ✓ Created: ${stats.productReviews.created}`);
+      console.log(`  ↻ Updated: ${stats.productReviews.updated}`);
+      console.log(`  ⊘ Skipped: ${stats.productReviews.skipped}`);
+      console.log(`  ✗ Errors: ${stats.productReviews.errors}`);
+
+      console.log('\n🏢 Brand Reviews:');
+      console.log(`  ✓ Created: ${stats.brandReviews.created}`);
+      console.log(`  ↻ Updated: ${stats.brandReviews.updated}`);
+      console.log(`  ⊘ Skipped: ${stats.brandReviews.skipped}`);
+      console.log(`  ✗ Errors: ${stats.brandReviews.errors}`);
+
+      console.log('\n🔗 SKU Matching:');
+      console.log(`  ✓ Matched: ${stats.skuMatches.matched}`);
+      console.log(`  ✗ Not found: ${stats.skuMatches.notFound}`);
+
+      const totalCreated = stats.productReviews.created + stats.brandReviews.created;
+      const totalUpdated = stats.productReviews.updated + stats.brandReviews.updated;
+      const totalSkipped = stats.productReviews.skipped + stats.brandReviews.skipped;
+      const totalErrors = stats.productReviews.errors + stats.brandReviews.errors;
+
+      console.log('\n📈 Overall Metaobjects:');
+      console.log(`  ✓ Created: ${totalCreated}`);
+      console.log(`  ↻ Updated: ${totalUpdated}`);
+      console.log(`  ⊘ Skipped: ${totalSkipped}`);
+      console.log(`  ✗ Errors: ${totalErrors}`);
+
+      console.log('\n' + '='.repeat(70));
+
+      if (stats.skuMatches.notFound > 0) {
+        console.log('\n⚠️  Warning: Some reviews were skipped due to SKU mismatches.');
+        console.log('   Check that Yotpo SKUs match Shopify product variant SKUs.');
+      }
+
+      if (totalErrors > 0) {
+        console.log('\n⚠️  Warning: Some reviews failed to sync. Review errors above.');
+      }
+    }
+
+    console.log('\n📊 Review Summary:');
+    console.log(`  Total fetched from Yotpo: ${stats.total}`);
+    console.log(`  Complete reviews (synced as metaobjects): ${completeReviews.length}`);
+    console.log(`  Incomplete reviews (no title/content): ${stats.filtered}`);
+    console.log(`  Reviews included in statistics: ${reviewsForStatistics.length}`);
+
     console.log('\n✅ Review sync completed successfully!\n');
 
-    // Step 7: Sync aggregated statistics
+    // Step 7: Sync aggregated statistics (use all reviews including incomplete ones)
     console.log('='.repeat(70));
     console.log('📊 Step 6: Syncing Aggregated Statistics');
     console.log('='.repeat(70) + '\n');
 
-    await syncStatistics(activeReviews, shopifyClient);
+    await syncStatistics(reviewsForStatistics, shopifyClient);
 
     console.log('\n✅ Full sync completed successfully!\n');
 

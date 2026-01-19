@@ -96,11 +96,11 @@ export function transformYotpoReview(yotpoReview, productId = null) {
   };
 }
 
-export function shouldSyncReview(yotpoReview) {
+export function shouldSyncReview(yotpoReview, logFiltered = false) {
   // Only sync active reviews (not deleted or archived)
   const isActive = !yotpoReview.deleted && !yotpoReview.archived;
 
-  // Only sync reviews with required fields
+  // Only sync reviews with required fields (for metaobject creation)
   const hasRequiredFields =
     yotpoReview.id &&
     yotpoReview.score &&
@@ -108,5 +108,32 @@ export function shouldSyncReview(yotpoReview) {
     yotpoReview.content &&
     yotpoReview.sku;
 
-  return isActive && hasRequiredFields;
+  const shouldSync = isActive && hasRequiredFields;
+
+  // Log why review was filtered (if requested)
+  if (logFiltered && !shouldSync) {
+    const reasons = [];
+    if (yotpoReview.deleted) reasons.push('deleted');
+    if (yotpoReview.archived) reasons.push('archived');
+    if (!yotpoReview.id) reasons.push('missing id');
+    if (!yotpoReview.score) reasons.push('missing score');
+    if (!yotpoReview.title) reasons.push('missing title');
+    if (!yotpoReview.content) reasons.push('missing content');
+    if (!yotpoReview.sku) reasons.push('missing sku');
+
+    console.log(`  ⊘ Filtered review #${yotpoReview.id || 'unknown'}: ${reasons.join(', ')}`);
+  }
+
+  return shouldSync;
+}
+
+export function shouldIncludeInStatistics(yotpoReview) {
+  // Include in statistics if it has the minimal required fields
+  const isActive = !yotpoReview.deleted && !yotpoReview.archived;
+  const hasMinimalFields =
+    yotpoReview.id &&
+    yotpoReview.score &&
+    yotpoReview.sku;
+
+  return isActive && hasMinimalFields;
 }
